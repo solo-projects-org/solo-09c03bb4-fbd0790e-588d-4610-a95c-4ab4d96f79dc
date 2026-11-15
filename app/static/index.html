@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>结算 SQL 计划对照台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>结算 SQL 计划对照台</h1>
+  <span id="slot-pill" class="pill">…</span>
+</header>
+<main>
+  <section class="card">
+    <h2>新建对照批次</h2>
+    <p class="hint">
+      只接受单条只读 SELECT。同一「可重复读 · 只读」事务内按
+      <b>默认 → 关闭 NestLoop → 关闭 NestLoop → 默认</b>（第二轮颠倒顺序）各执行一次
+      <code>EXPLAIN (ANALYZE, FORMAT JSON)</code>，共 4 次、共享同一快照；
+      单次执行限时 10 秒；同时只运行一批，满额会提示繁忙。
+    </p>
+    <div class="row">
+      <label for="preset" class="hint">预设样例：</label>
+      <select id="preset">
+        <option value="skew">类别 A 结算汇总（倾斜 + 表达式过滤，默认易误选嵌套循环）</option>
+        <option value="single">单商户结算明细（高选择性，默认计划占优）</option>
+        <option value="daily">每日结算汇总（无关联，两种设置计划相同）</option>
+      </select>
+    </div>
+    <textarea id="sql-input" rows="11" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="run-btn">开始对照</button>
+      <span id="submit-msg" class="msg"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>补记样表数据</h2>
+    <p class="hint">
+      对照运行期间也可正常入库；对照事务使用同一快照，新补记的行不会进入本批结果。
+    </p>
+    <div class="row">
+      <button id="insert-btn">向 settlement_orders 补记一行</button>
+      <span id="insert-msg" class="msg"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>对照批次</h2>
+    <div id="batches"></div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
