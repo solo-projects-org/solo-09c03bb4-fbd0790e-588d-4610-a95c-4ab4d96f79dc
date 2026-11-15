@@ -93,21 +93,60 @@ ORDER BY total_amount DESC;
 | GET  | `/api/batches/{id}` | 批次详情（含 4 次计划 JSON 与结构摘要） |
 | POST | `/api/batches/{id}/cancel` | 取消运行中的批次 |
 | POST | `/api/sample-row` | 向 `settlement_orders` 补记一行 |
+| GET  | `/api/sampler` | 采样器状态、跟踪目标、候选 SQL、采样记录 |
+| POST | `/api/sampler/target` | 选定跟踪目标（body: `dbid`/`userid`/`queryid`） |
+| DELETE | `/api/sampler/target` | 停止跟踪（保留已有采样记录） |
+| POST | `/api/sampler/samples` | 立即采样一次 |
+| POST | `/api/sampler/traffic` | 执行网页固定结算 SELECT N 次以产生流量 |
+| POST | `/api/sampler/auto` | 开启/关闭定时采样（`running`、`interval_s`） |
+
+## pg_stat_statements 采样
+
+夜班值班员需要从真实结算查询的持续耗时中挑出值得排查的 SQL。数据库已通过
+`shared_preload_libraries` 预加载 `pg_stat_statements`（见 `docker-compose.yml`），
+`db/init.sql` 里创建扩展。网页上「pg_stat_statements 采样」区域可以：
+
+1. **选择跟踪目标**：从当前数据库中所有涉及 `settlement_orders` 的只读 SELECT
+   （`toplevel`、有 queryid、以 SELECT/WITH 开头）里挑一条。计划对照使用的
+   `EXPLAIN` 语句与采样器自身的查询被排除。
+2. **制造流量**：点击「运行结算查询产生流量」会反复执行一条固定的结算
+   SELECT（涉及 `settlement_orders` 与 `merchants`），并可自动把它设为跟踪目标。
+3. **采样**：手动「立即采样」或开启定时采样。每次采样记录该 SQL 的
+   **累计调用数**、**累计总执行耗时**、**统计起始时间**和**采样时间**，
+   并按时间展示相邻有效样本之间的**新增调用数**与**平均耗时**
+   （新增总耗时 ÷ 新增调用数）。
+
+增量计算规则：
+
+- 只有 **数据库、用户、queryid、统计起始时间（`pg_stat_statements_info.stats_reset`）
+  全部一致**，且累计调用数与累计耗时都未回退时，才计算增量；
+- **统计重置**（`stats_reset` 变化）、**条目消失后重现**、**累计计数回退**都会写入
+  带 `gap_reason` 的**断档**样本，`delta_calls` / `avg_exec_ms` 为空，绝不跨段相减；
+- 条目从统计中消失时记一条「条目消失」样本；连续消失不会重复刷屏；
+- **采集失败不推进起点**：整个采样事务回滚，不写样本，下一次成功采样仍与上一条
+  有效样本比较；
+- **并发安全**：每次采样在同一个事务里取 `pg_advisory_xact_lock`，再读统计、
+  算增量、写样本。并发请求排队执行，不会两次使用同一个前置样本，也不会写出
+  时间倒序的区间（采样时间在拿到锁之后用 `clock_timestamp()` 取）；
+- **持久化**：跟踪目标与样本存在 PostgreSQL 的 `sampler_target` / `ss_samples`
+  表，服务重启后从上次有效样本接着采。
 
 ## 目录结构
 
 ```
 ├── docker-compose.yml
-├── db/init.sql            # 结算样表 + 倾斜数据
+├── db/init.sql            # 结算样表 + 倾斜数据 + pg_stat_statements 扩展与采样表
 └── app/
     ├── Dockerfile
     ├── main.py            # FastAPI 入口
     ├── runner.py          # 批次执行器（单事务 4 次执行、限时、取消、名额管理）
     ├── plans.py           # 计划结构归一化 + 结论判定
     ├── sqlcheck.py        # 只读 SELECT 校验
+    ├── sampler.py         # pg_stat_statements 采样（增量、断档、并发串行化、持久化）
     ├── store.py           # 内存批次仓库
     └── static/            # 网页
 ```
 
 > 说明：该工具面向受信任的内网工程师，输入的 SQL 会被直接执行（只读事务保护），
-> 请勿暴露到公网。批次数据保存在内存中，重启即清空。
+> 请勿暴露到公网。对照批次数据保存在内存中，重启即清空；采样目标与采样记录
+> 保存在 PostgreSQL 中。

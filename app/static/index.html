@@ -36,6 +36,47 @@
   </section>
 
   <section class="card">
+    <h2>pg_stat_statements 采样</h2>
+    <p class="hint">
+      跟踪一条涉及 <code>settlement_orders</code> 的只读 SELECT，记录其累计调用数与总执行耗时，
+      并按样本时间展示相邻样本的<b>新增调用数</b>与<b>平均耗时</b>。
+      仅当数据库、用户、queryid、统计起始时间都一致且计数未回退时才计算增量；
+      统计重置或条目消失后重现会标为<b>断档</b>，绝不跨段相减。采样记录保存在 PostgreSQL，重启后可继续。
+    </p>
+    <div id="sampler-status" class="sampler-status"></div>
+
+    <div class="sampler-block">
+      <h3>1. 选择跟踪目标</h3>
+      <div id="sampler-target"></div>
+    </div>
+
+    <div class="sampler-block">
+      <h3>2. 制造流量与采样</h3>
+      <div class="row">
+        <button id="traffic-btn">运行结算查询产生流量</button>
+        <label class="hint" for="traffic-times">执行次数</label>
+        <input id="traffic-times" type="number" min="1" max="50" value="5">
+        <button id="sample-btn" class="btn-alt">立即采样</button>
+        <span id="sampler-msg" class="msg"></span>
+      </div>
+      <div class="row">
+        <label class="hint"><input id="auto-toggle" type="checkbox"> 定时自动采样</label>
+        <label class="hint" for="auto-interval">间隔（秒）</label>
+        <input id="auto-interval" type="number" min="3" max="3600" value="30">
+        <span id="auto-msg" class="msg"></span>
+      </div>
+      <p class="hint">
+        采集失败不会写入样本，也不推进增量起点；下一次成功采样仍与上一条有效样本比较。
+      </p>
+    </div>
+
+    <div class="sampler-block">
+      <h3>3. 采样记录（按时间）</h3>
+      <div id="sampler-samples"></div>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>补记样表数据</h2>
     <p class="hint">
       对照运行期间也可正常入库；对照事务使用同一快照，新补记的行不会进入本批结果。

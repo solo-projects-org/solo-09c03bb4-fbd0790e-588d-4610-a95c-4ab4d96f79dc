@@ -55,5 +55,41 @@ CROSS JOIN LATERAL (SELECT round((1 + random() * 499)::numeric, 2) AS amount) AS
 CREATE INDEX idx_orders_merchant   ON settlement_orders (merchant_id);
 CREATE INDEX idx_orders_settle_date ON settlement_orders (settle_date);
 
+-- 采样功能依赖 pg_stat_statements 的累计调用数与总执行耗时。
+-- 服务端已通过 shared_preload_libraries 预加载，这里只需安装扩展。
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
 ANALYZE merchants;
 ANALYZE settlement_orders;
+
+-- 采样表由 web 服务启动时用 CREATE TABLE IF NOT EXISTS 建立（见 app/sampler.py），
+-- 这样在不重新初始化数据卷的情况下也能补建。这里同样预建一份，便于直接用 psql 查看。
+CREATE TABLE IF NOT EXISTS sampler_target (
+    id          smallint    PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    dbid        bigint      NOT NULL,
+    userid      bigint      NOT NULL,
+    queryid     bigint      NOT NULL,
+    query_text  text        NOT NULL,
+    selected_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE TABLE IF NOT EXISTS ss_samples (
+    id                  bigserial   PRIMARY KEY,
+    dbid                bigint      NOT NULL,
+    userid              bigint      NOT NULL,
+    queryid             bigint      NOT NULL,
+    sampled_at          timestamptz NOT NULL,
+    stats_reset         timestamptz,
+    total_calls         bigint,
+    total_exec_time_ms  double precision,
+    delta_calls         bigint,
+    delta_exec_time_ms  double precision,
+    avg_exec_ms         double precision,
+    gap_reason          text,
+    is_baseline         boolean     NOT NULL DEFAULT false,
+    state               text        NOT NULL DEFAULT 'sample',
+    prev_sample_id      bigint
+);
+
+CREATE INDEX IF NOT EXISTS idx_ss_samples_target_id
+    ON ss_samples (dbid, userid, queryid, id);

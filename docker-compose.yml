@@ -4,7 +4,17 @@ services:
   db:
     image: postgres:16-alpine
     # 关闭并行查询：迁库后实例未开并行，结算 SQL 才会走到嵌套循环计划
-    command: postgres -c max_parallel_workers_per_gather=0
+    # 预加载 pg_stat_statements：采样功能依赖它的累计调用数与总执行耗时
+    command:
+      - postgres
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=10000
+      - -c
+      - pg_stat_statements.track=top
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
